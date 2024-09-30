@@ -1,5 +1,5 @@
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 from enum import Enum
@@ -20,6 +20,18 @@ class WorkersORM(Base):
 
     id: Mapped[intpk]
     username: Mapped[str]
+
+    resumes: Mapped[list['ResumesOrm']] = relationship(
+        back_populates= 'worker'
+        # backref = 'worker' - устаревшая практика | автоматом создаёт это поле в связываемой модели
+    )
+
+    resumes_parttime: Mapped[list['ResumesOrm']] = relationship(
+        back_populates= 'worker',
+        primaryjoin= "and_(WorkersORM.id == ResumesOrm.worker_id, ResumesOrm.workload == 'parttime')",
+        order_by= "ResumesOrm.id.desc()",
+        # lazy= "selectin" тип подгрузки => можно не указывать в запросах | лучше не делать - не явно
+    )
 
 class Workload(Enum):
     fulltime = 'fulltime'
@@ -43,6 +55,10 @@ class ResumesOrm(Base):
     worker_id: Mapped[int] = mapped_column(ForeignKey("workers.id", ondelete="CASCADE"))
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
+
+    worker: Mapped['WorkersORM'] = relationship(
+        back_populates= 'resumes'
+    )
 
 
 

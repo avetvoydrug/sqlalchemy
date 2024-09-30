@@ -1,7 +1,9 @@
 from sqlalchemy import Integer, text, insert, select, func, cast, and_
 from database import engine, async_engine, session_factory, Base
 from models import WorkersORM, ResumesOrm, Workload
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, joinedload, selectinload, contains_eager
+
+from schemas import WorkerRelDTO
 
 
 #expire, refresh, flush
@@ -138,3 +140,100 @@ class SyncOrm:
             res = session.execute(query)
             result = res.all()
             print(f'{result=}')
+    
+    @staticmethod
+    def select_workers_with_lazy_relationship():
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+            )
+            res = session.execute(query)
+            result = res.scalars().all()
+            #n+1 проблема | ленивый запрос
+            # после выбора всех Воркеров (1 запрос к базе), 
+            # для вывода резюмэх каждого Воркера используется доп запрос 
+            # SELECT ResumesOrm FROM resumes WHERE worker_id = resumes.worker_id 
+            # Выгодно, когда не требуется подгружать резюме
+            worker_1_resumes = result[0].resumes
+            print(worker_1_resumes)
+
+            worker_2_resumes = result[1].resumes
+            print(worker_2_resumes)
+
+    @staticmethod
+    def select_workers_with_joinedload_relationship():
+        # many to one / one to one
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+                .options(joinedload(WorkersORM.resumes))
+            )
+            res = session.execute(query)
+            result = res.unique().scalars().all()
+            #n+1 проблема решена
+            # 1 запрос к базе с join'ом | дублирование данных левой таблицы
+            # LEFT JOIN (unique()--чисто на уровне python, 
+            # потому что несколько одинаковых первичных ключей)
+            worker_1_resumes = result[0].resumes
+            print(worker_1_resumes)
+
+            worker_2_resumes = result[1].resumes
+            print(worker_2_resumes)
+    
+    @staticmethod
+    def select_workers_with_selectin_relationship():
+        # many to many, one to many
+        # выбрали всех воркеров и по айди выбранных выбрали резюме
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+                .options(selectinload(WorkersORM.resumes))
+            )
+            res = session.execute(query)
+            result = res.unique().scalars().all()
+            #n+1 проблема решена
+            # 2 запроса, но без дублирования данных
+            worker_1_resumes = result[0].resumes
+            print(worker_1_resumes)
+
+            worker_2_resumes = result[1].resumes
+            print(worker_2_resumes)
+
+    @staticmethod
+    def select_workers_with_condition_parttime_workload():
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+                .options(selectinload(WorkersORM.resumes_parttime))
+            )
+            res = session.execute(query)
+            result = res.scalars().all()
+        
+            print(result)
+    
+    @staticmethod
+    def select_workers_with_condition_relationship_contains_eager():
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+                .join(WorkersORM.resumes)
+                .options(contains_eager(WorkersORM.resumes))
+                .filter(ResumesOrm.workload == 'parttime')
+            )
+            res = session.execute(query)
+            result = res.unique().scalars().all()
+
+            print(result)
+
+    @staticmethod
+    def select_workers_with_relationship():
+        with session_factory() as session:
+            query = (
+                select(WorkersORM)
+                .options(selectinload(WorkersORM.resumes))
+            )
+            res = session.execute(query)
+            result_orm = res.unique().scalars().all()
+            print(f'{result_orm=}')
+            result_dto = [WorkerRelDTO.model_validate(row, from_attributes=True) for row in result_orm]
+            print(f'{result_dto=}')
